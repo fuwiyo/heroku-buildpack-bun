@@ -197,7 +197,7 @@ if [ -f "package.json" ] && [ ! -f ".skip-bun-install" ]; then
     mkdir -p "$BUN_CACHE_DIR"
 
     # Install with appropriate flags
-    local install_args=""
+    install_args=""
 
     # Use frozen lockfile if either lockfile exists
     if [ -f "bun.lock" ]; then
