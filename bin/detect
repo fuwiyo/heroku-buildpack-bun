@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# bin/detect <build-dir>
+
+set -e
+
+BUILD_DIR=$1
+
+# Check for bun.lock (Bun's text-based lockfile, default since v1.2)
+if [ -f "$BUILD_DIR/bun.lock" ]; then
+  echo "Bun"
+  exit 0
+fi
+
+# Check for bun.lockb (Bun's legacy binary lockfile)
+if [ -f "$BUILD_DIR/bun.lockb" ]; then
+  echo "Bun"
+  exit 0
+fi
+
+# Check for package.json with bun-specific fields
+if [ -f "$BUILD_DIR/package.json" ]; then
+  # Check if package.json mentions bun as packageManager
+  if grep -q '"packageManager".*"bun@' "$BUILD_DIR/package.json" 2>/dev/null; then
+    echo "Bun"
+    exit 0
+  fi
+
+  # Check for bun in engines field - need to handle multiline JSON
+  if grep -A 10 '"engines"' "$BUILD_DIR/package.json" 2>/dev/null | grep -q '"bun"'; then
+    echo "Bun"
+    exit 0
+  fi
+
+  # Check for bun scripts
+  if grep -q '"bun ' "$BUILD_DIR/package.json" 2>/dev/null; then
+    echo "Bun"
+    exit 0
+  fi
+fi
+
+# Check for Bun version files
+if [ -f "$BUILD_DIR/.bun-version" ] || \
+   [ -f "$BUILD_DIR/runtime.bun.txt" ] || \
+   [ -f "$BUILD_DIR/.bunfig.toml" ] || \
+   [ -f "$BUILD_DIR/bunfig.toml" ]; then
+  echo "Bun"
+  exit 0
+fi
+
+# Check for TypeScript config that might indicate Bun usage
+if [ -f "$BUILD_DIR/tsconfig.json" ] && [ -f "$BUILD_DIR/package.json" ]; then
+  # If there's TypeScript and package.json but no node_modules and no package-lock.json/yarn.lock
+  # it might be a Bun project
+  if [ ! -d "$BUILD_DIR/node_modules" ] && \
+     [ ! -f "$BUILD_DIR/package-lock.json" ] && \
+     [ ! -f "$BUILD_DIR/yarn.lock" ] && \
+     [ ! -f "$BUILD_DIR/pnpm-lock.yaml" ]; then
+    echo "Bun"
+    exit 0
+  fi
+fi
+
+exit 1

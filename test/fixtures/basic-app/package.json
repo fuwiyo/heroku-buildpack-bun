@@ -1,0 +1,22 @@
+{
+  "name": "basic-bun-app",
+  "version": "1.0.0",
+  "description": "A basic Bun application for testing the buildpack",
+  "main": "index.ts",
+  "scripts": {
+    "start": "bun run index.ts",
+    "dev": "bun run --watch index.ts",
+    "build": "bun build index.ts --outdir=dist",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "hono": "^3.12.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "engines": {
+    "bun": "^1.2.0"
+  },
+  "packageManager": "bun@1.2.17"
+}

@@ -1,0 +1,34 @@
+[buildpack]
+id = "heroku-community/bun"
+version = "1.0.1"
+name = "Bun"
+description = "A comprehensive, no-BS Heroku buildpack for Bun - the fast all-in-one JavaScript runtime & toolkit"
+homepage = "https://github.com/your-username/heroku-buildpack-bun"
+
+[[buildpack.licenses]]
+type = "MIT"
+uri = "https://github.com/your-username/heroku-buildpack-bun/blob/main/LICENSE"
+
+[metadata]
+include_files = [
+  "bin/detect",
+  "bin/compile",
+  "bin/release",
+  "bin/setup",
+  "lib/json.sh",
+  "lib/utils.sh",
+  "README.md",
+  "buildpack.toml"
+]
+
+[[stacks]]
+id = "heroku-20"
+
+[[stacks]]
+id = "heroku-22"
+
+[[stacks]]
+id = "heroku-24"
+
+[[stacks]]
+id = "container"

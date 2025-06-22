@@ -1,0 +1,317 @@
+#!/usr/bin/env bash
+# bin/compile <build-dir> <cache-dir> <env-dir>
+
+set -eo pipefail
+
+# Arguments
+BUILD_DIR=${1:-}
+CACHE_DIR=${2:-}
+ENV_DIR=${3:-}
+
+# Get the directory where this script is located
+BP_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")"; cd ..; pwd)
+
+# Load helper libraries
+source "$BP_DIR/lib/json.sh"
+source "$BP_DIR/lib/utils.sh"
+
+# Ensure required arguments are provided
+if [ -z "$BUILD_DIR" ]; then
+  log_error "BUILD_DIR not provided"
+  exit 1
+fi
+
+if [ -z "$CACHE_DIR" ]; then
+  log_error "CACHE_DIR not provided"
+  exit 1
+fi
+
+# Start timing
+START_TIME=$(date +%s)
+
+# Create necessary directories
+mkdir -p "$BUILD_DIR" "$CACHE_DIR"
+
+# Set up paths
+HEROKU_DIR="$BUILD_DIR/.heroku"
+BUN_INSTALL_DIR="$HEROKU_DIR/bin"
+PROFILE_DIR="$BUILD_DIR/.profile.d"
+EXPORT_FILE="$BP_DIR/export"
+
+# Export environment variables from ENV_DIR
+if [ -d "$ENV_DIR" ]; then
+  header "Loading environment variables"
+  for env_file in "$ENV_DIR"/*; do
+    if [ -f "$env_file" ]; then
+      env_var_name=$(basename "$env_file")
+      env_var_value=$(cat "$env_file")
+
+      # Skip some system variables that might interfere
+      case "$env_var_name" in
+        PATH|GIT_DIR|CPATH|CPPATH|LD_PRELOAD|LIBRARY_PATH)
+          continue
+          ;;
+        *)
+          export "$env_var_name=$env_var_value"
+          ;;
+      esac
+    fi
+  done
+  log_success "Environment variables loaded"
+fi
+
+# Check disk space (require at least 500MB free)
+if ! check_disk_space 500 "$BUILD_DIR"; then
+  exit 1
+fi
+
+# Determine Bun version to install
+BUN_VERSION=""
+
+# 1. Check for .bun-version file
+if [ -f "$BUILD_DIR/.bun-version" ]; then
+  BUN_VERSION=$(cat "$BUILD_DIR/.bun-version" | tr -d '[:space:]')
+  log_info "Found .bun-version: $BUN_VERSION"
+fi
+
+# 2. Check for runtime.bun.txt file
+if [ -z "$BUN_VERSION" ] && [ -f "$BUILD_DIR/runtime.bun.txt" ]; then
+  BUN_VERSION=$(cat "$BUILD_DIR/runtime.bun.txt" | tr -d '[:space:]')
+  log_info "Found runtime.bun.txt: $BUN_VERSION"
+fi
+
+# 3. Check for runtime.txt file
+if [ -z "$BUN_VERSION" ] && [ -f "$BUILD_DIR/runtime.txt" ]; then
+  BUN_VERSION=$(cat "$BUILD_DIR/runtime.txt" | tr -d '[:space:]')
+  log_info "Found runtime.txt: $BUN_VERSION"
+fi
+
+# 4. Check package.json packageManager field
+if [ -z "$BUN_VERSION" ] && [ -f "$BUILD_DIR/package.json" ]; then
+  PACKAGE_MANAGER=$(get_package_manager "$BUILD_DIR/package.json")
+  if [ -n "$PACKAGE_MANAGER" ]; then
+    BUN_VERSION=$(extract_bun_version_from_package_manager "$PACKAGE_MANAGER")
+    if [ -n "$BUN_VERSION" ]; then
+      log_info "Found version in packageManager: $BUN_VERSION"
+    fi
+  fi
+fi
+
+# 5. Check package.json engines.bun field
+if [ -z "$BUN_VERSION" ] && [ -f "$BUILD_DIR/package.json" ]; then
+  ENGINES_BUN=$(get_bun_version_from_engines "$BUILD_DIR/package.json")
+  if [ -n "$ENGINES_BUN" ]; then
+    # Handle version ranges - take the first version found
+    BUN_VERSION=$(echo "$ENGINES_BUN" | sed 's/[^0-9.].*$//' | sed 's/^[^0-9]*//')
+    if [ -n "$BUN_VERSION" ]; then
+      log_info "Found version in engines.bun: $BUN_VERSION"
+    fi
+  fi
+fi
+
+# 6. Check environment variable
+if [ -z "$BUN_VERSION" ] && [ -n "$BUN_VERSION_OVERRIDE" ]; then
+  BUN_VERSION="$BUN_VERSION_OVERRIDE"
+  log_info "Using environment variable BUN_VERSION_OVERRIDE: $BUN_VERSION"
+fi
+
+# 7. Default to latest if nothing found
+if [ -z "$BUN_VERSION" ]; then
+  BUN_VERSION=$(get_latest_bun_version)
+  log_info "No version specified, using latest: $BUN_VERSION"
+fi
+
+# Normalize and validate version
+BUN_VERSION=$(normalize_version "$BUN_VERSION")
+
+if [ "$(is_valid_version "$BUN_VERSION")" != "true" ]; then
+  log_error "Invalid Bun version: $BUN_VERSION"
+  exit 1
+fi
+
+header "Installing Bun v$BUN_VERSION"
+
+# Check if Bun is already cached
+CACHED_BUN="$CACHE_DIR/bun-$BUN_VERSION/bin/bun"
+if [ -f "$CACHED_BUN" ]; then
+  log_info "Using cached Bun v$BUN_VERSION"
+  mkdir -p "$BUN_INSTALL_DIR"
+  cp "$CACHED_BUN" "$BUN_INSTALL_DIR/bun"
+  chmod +x "$BUN_INSTALL_DIR/bun"
+else
+  # Download and install Bun
+  BUN_CACHE_DIR="$CACHE_DIR/bun-$BUN_VERSION"
+  mkdir -p "$BUN_CACHE_DIR"
+
+  if ! download_and_extract_bun "$BUN_VERSION" "$BUN_CACHE_DIR/bin" "$CACHE_DIR"; then
+    log_error "Failed to download and install Bun"
+    exit 1
+  fi
+
+  # Copy to build directory
+  mkdir -p "$BUN_INSTALL_DIR"
+  cp "$BUN_CACHE_DIR/bin/bun" "$BUN_INSTALL_DIR/bun"
+  chmod +x "$BUN_INSTALL_DIR/bun"
+fi
+
+# Add Bun to PATH for this build
+export PATH="$BUN_INSTALL_DIR:$PATH"
+export BUN_INSTALL="$HEROKU_DIR"
+export BUN_INSTALL_BIN="$BUN_INSTALL_DIR"
+
+# Verify installation
+if ! command -v bun >/dev/null 2>&1; then
+  log_error "Bun installation failed - command not found in PATH"
+  exit 1
+fi
+
+INSTALLED_VERSION=$(bun --version 2>/dev/null || echo "unknown")
+log_success "Bun v$INSTALLED_VERSION installed successfully"
+
+# Change to build directory
+cd "$BUILD_DIR"
+
+# Validate package.json if it exists
+if [ -f "package.json" ]; then
+  if [ "$(is_valid_json "package.json")" != "true" ]; then
+    log_error "Invalid package.json file"
+    exit 1
+  fi
+
+  PACKAGE_NAME=$(get_package_name "package.json")
+  if [ -n "$PACKAGE_NAME" ]; then
+    log_info "Building package: $PACKAGE_NAME"
+  fi
+fi
+
+# Install dependencies
+INSTALL_START_TIME=$(date +%s)
+
+if [ -f "package.json" ] && [ ! -f ".skip-bun-install" ]; then
+  header "Installing dependencies"
+
+  # Check if we have dependencies to install
+  if [ "$(has_dependencies "package.json")" = "true" ]; then
+    # Set up Bun cache directory
+    export BUN_CACHE_DIR="$CACHE_DIR/bun-cache"
+    mkdir -p "$BUN_CACHE_DIR"
+
+    # Install with appropriate flags
+    local install_args=""
+
+    # Use frozen lockfile if either lockfile exists
+    if [ -f "bun.lock" ]; then
+      install_args="--frozen-lockfile"
+      log_info "Using frozen lockfile (bun.lock)"
+    elif [ -f "bun.lockb" ]; then
+      install_args="--frozen-lockfile"
+      log_info "Using frozen lockfile (bun.lockb)"
+    fi
+
+    # Check for workspaces
+    if [ "$(has_workspaces "package.json")" = "true" ]; then
+      log_info "Detected workspaces configuration"
+    fi
+
+    # Run bun install
+    if ! bun install $install_args; then
+      log_error "Failed to install dependencies"
+      exit 1
+    fi
+
+    INSTALL_TIME=$(time_measure $INSTALL_START_TIME)
+    log_success "Dependencies installed in $INSTALL_TIME"
+  else
+    log_info "No dependencies to install"
+  fi
+else
+  if [ -f ".skip-bun-install" ]; then
+    log_info "Skipping dependency installation (found .skip-bun-install)"
+  else
+    log_info "No package.json found, skipping dependency installation"
+  fi
+fi
+
+# Run build scripts
+BUILD_START_TIME=$(date +%s)
+
+# Run heroku-prebuild script
+if [ -f "package.json" ]; then
+  if [ "$(has_script "package.json" "heroku-prebuild")" = "true" ] && [ ! -f ".skip-bun-heroku-prebuild" ]; then
+    header "Running heroku-prebuild script"
+    if ! bun run heroku-prebuild; then
+      log_error "heroku-prebuild script failed"
+      exit 1
+    fi
+    log_success "heroku-prebuild completed"
+  fi
+fi
+
+# Run build script
+if [ -f "package.json" ]; then
+  if [ "$(has_script "package.json" "build")" = "true" ] && [ ! -f ".skip-bun-build" ]; then
+    header "Running build script"
+    if ! bun run build; then
+      log_error "Build script failed"
+      exit 1
+    fi
+    BUILD_TIME=$(time_measure $BUILD_START_TIME)
+    log_success "Build completed in $BUILD_TIME"
+  fi
+fi
+
+# Run heroku-postbuild script
+if [ -f "package.json" ]; then
+  if [ "$(has_script "package.json" "heroku-postbuild")" = "true" ] && [ ! -f ".skip-bun-heroku-postbuild" ]; then
+    header "Running heroku-postbuild script"
+    if ! bun run heroku-postbuild; then
+      log_error "heroku-postbuild script failed"
+      exit 1
+    fi
+    log_success "heroku-postbuild completed"
+  fi
+fi
+
+# Create runtime profile script
+create_profile_script "$PROFILE_DIR" "$BUN_INSTALL_DIR"
+
+# Export environment variables for subsequent buildpacks
+export_env_vars "$EXPORT_FILE" "$BUN_INSTALL_DIR"
+
+# Clean up cache to prevent it from growing too large
+header "Cleaning up cache"
+
+# Remove old cached Bun versions (keep only the current one and previous one)
+if [ -d "$CACHE_DIR" ]; then
+  find "$CACHE_DIR" -maxdepth 1 -name "bun-*" -type d | sort -V | head -n -2 | xargs rm -rf 2>/dev/null || true
+fi
+
+# Clean up node_modules cache if it gets too large (over 100MB)
+if [ -d "$CACHE_DIR/bun-cache" ]; then
+  CACHE_SIZE=$(du -sm "$CACHE_DIR/bun-cache" 2>/dev/null | cut -f1 || echo "0")
+  if [ "$CACHE_SIZE" -gt 100 ]; then
+    log_info "Cleaning large cache directory (${CACHE_SIZE}MB)"
+    rm -rf "$CACHE_DIR/bun-cache"
+  fi
+fi
+
+# Final timing
+TOTAL_TIME=$(time_measure $START_TIME)
+header "Build completed in $TOTAL_TIME"
+
+# Display helpful information
+echo
+log_info "Bun v$INSTALLED_VERSION is now available"
+log_info "Your app is ready to be deployed"
+
+if [ -f "package.json" ]; then
+  # Show available scripts
+  if command -v jq >/dev/null 2>&1; then
+    SCRIPTS=$(jq -r '.scripts // {} | keys | join(", ")' "package.json" 2>/dev/null)
+    if [ -n "$SCRIPTS" ] && [ "$SCRIPTS" != "" ]; then
+      log_info "Available scripts: $SCRIPTS"
+    fi
+  fi
+fi
+
+echo

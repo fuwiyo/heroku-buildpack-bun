@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# bin/release <build-dir>
+
+BUILD_DIR=$1
+
+# Default process types for Bun applications
+cat << EOF
+---
+addons: []
+default_process_types:
+  web: bun start
+EOF
