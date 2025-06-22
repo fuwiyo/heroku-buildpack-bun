@@ -1,6 +1,14 @@
 # Heroku Buildpack for Bun
 
+![Bun](https://img.shields.io/badge/Bun-1.2+-black?logo=bun&logoColor=white)
+![Heroku](https://img.shields.io/badge/Heroku-Ready-purple?logo=heroku&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-blue.svg)
+![Version](https://img.shields.io/badge/Version-1.0.1-green.svg)
+![Tests](https://github.com/fuwiyo/heroku-buildpack-bun/workflows/Test%20Buildpack/badge.svg)
+
 A comprehensive, no-BS Heroku buildpack for [Bun](https://bun.sh/) - the fast all-in-one JavaScript runtime & toolkit.
+
+> **🚀 Ready to deploy?** This buildpack provides everything you need to run Bun applications on Heroku with zero configuration and maximum performance.
 
 ## Features
 
@@ -19,7 +27,7 @@ A comprehensive, no-BS Heroku buildpack for [Bun](https://bun.sh/) - the fast al
 
 1. **Set the buildpack for your Heroku app:**
    ```bash
-   heroku buildpacks:set https://github.com/your-username/heroku-buildpack-bun
+   heroku buildpacks:set https://github.com/fuwiyo/heroku-buildpack-bun
    ```
 
 2. **Deploy your Bun app:**
@@ -283,4 +291,4 @@ MIT License - see LICENSE file for details.
 
 - [Bun Documentation](https://bun.sh/docs)
 - [Heroku Buildpack Documentation](https://devcenter.heroku.com/articles/buildpacks)
-- [GitHub Issues](https://github.com/your-username/heroku-buildpack-bun/issues)
+- [GitHub Issues](https://github.com/fuwiyo/heroku-buildpack-bun/issues)

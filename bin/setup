@@ -26,4 +26,4 @@ echo "To use this buildpack with your Heroku app:"
 echo "  heroku buildpacks:set file://$(realpath "$BP_DIR")"
 echo
 echo "Or push to a Git repository and use:"
-echo "  heroku buildpacks:set https://github.com/your-username/heroku-buildpack-bun"
+echo "  heroku buildpacks:set https://github.com/fuwiyo/heroku-buildpack-bun"

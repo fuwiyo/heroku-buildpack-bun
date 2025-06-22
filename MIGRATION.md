@@ -219,7 +219,7 @@ Once migrated to `bun.lock`, you'll enjoy:
 If you encounter issues during migration:
 
 1. **Check Bun Documentation**: [https://bun.sh/docs/install/lockfile](https://bun.sh/docs/install/lockfile)
-2. **Buildpack Issues**: [GitHub Issues](https://github.com/your-username/heroku-buildpack-bun/issues)
+2. **Buildpack Issues**: [GitHub Issues](https://github.com/fuwiyo/heroku-buildpack-bun/issues)
 3. **Bun Community**: [Discord](https://bun.sh/discord)
 
 ---

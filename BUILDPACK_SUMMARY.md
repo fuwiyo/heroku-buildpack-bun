@@ -264,7 +264,7 @@ your-bun-app/
 
 ## 🆘 Support & Community
 
-- GitHub Issues for bug reports and feature requests
+- [GitHub Issues](https://github.com/fuwiyo/heroku-buildpack-bun/issues) for bug reports and feature requests
 - Comprehensive documentation and examples
 - Active maintenance and updates
 - Community-driven improvements

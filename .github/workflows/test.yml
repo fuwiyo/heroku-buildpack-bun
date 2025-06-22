@@ -1,0 +1,437 @@
+name: Test Buildpack
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, ubuntu-22.04]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq unzip curl
+
+    - name: Make scripts executable
+      run: |
+        chmod +x bin/* lib/* scripts/* test/*
+
+    - name: Validate buildpack structure
+      run: |
+        echo "Checking required files..."
+        test -f bin/detect
+        test -f bin/compile
+        test -f bin/release
+        test -f lib/json.sh
+        test -f lib/utils.sh
+        test -f README.md
+        test -f buildpack.toml
+        echo "✅ All required files present"
+
+    - name: Test detect script
+      run: |
+        echo "Testing detect script..."
+
+        # Test bun.lock detection
+        mkdir -p test-detect/bun-lock
+        touch test-detect/bun-lock/bun.lock
+        result=$(./bin/detect test-detect/bun-lock)
+        if [ "$result" != "Bun" ]; then
+          echo "❌ Failed to detect bun.lock"
+          exit 1
+        fi
+
+        # Test bun.lockb detection
+        mkdir -p test-detect/bun-lockb
+        touch test-detect/bun-lockb/bun.lockb
+        result=$(./bin/detect test-detect/bun-lockb)
+        if [ "$result" != "Bun" ]; then
+          echo "❌ Failed to detect bun.lockb"
+          exit 1
+        fi
+
+        # Test packageManager detection
+        mkdir -p test-detect/package-manager
+        cat > test-detect/package-manager/package.json << 'EOF'
+        {
+          "name": "test",
+          "packageManager": "bun@1.2.17"
+        }
+        EOF
+        result=$(./bin/detect test-detect/package-manager)
+        if [ "$result" != "Bun" ]; then
+          echo "❌ Failed to detect packageManager"
+          exit 1
+        fi
+
+        # Test engines detection
+        mkdir -p test-detect/engines
+        cat > test-detect/engines/package.json << 'EOF'
+        {
+          "name": "test",
+          "engines": {
+            "bun": "^1.2.0"
+          }
+        }
+        EOF
+        result=$(./bin/detect test-detect/engines)
+        if [ "$result" != "Bun" ]; then
+          echo "❌ Failed to detect engines.bun"
+          exit 1
+        fi
+
+        # Test .bun-version detection
+        mkdir -p test-detect/bun-version
+        echo "1.2.17" > test-detect/bun-version/.bun-version
+        result=$(./bin/detect test-detect/bun-version)
+        if [ "$result" != "Bun" ]; then
+          echo "❌ Failed to detect .bun-version"
+          exit 1
+        fi
+
+        # Test non-Bun project (should fail)
+        mkdir -p test-detect/node-project
+        cat > test-detect/node-project/package.json << 'EOF'
+        {
+          "name": "test",
+          "scripts": {
+            "start": "node index.js"
+          }
+        }
+        EOF
+        touch test-detect/node-project/package-lock.json
+        if ./bin/detect test-detect/node-project >/dev/null 2>&1; then
+          echo "❌ Incorrectly detected Node.js project"
+          exit 1
+        fi
+
+        echo "✅ All detect tests passed"
+
+    - name: Test release script
+      run: |
+        echo "Testing release script..."
+        output=$(./bin/release /tmp)
+
+        if [[ ! "$output" =~ "web: bun start" ]]; then
+          echo "❌ Release script missing default web process"
+          exit 1
+        fi
+
+        if [[ ! "$output" =~ "---" ]]; then
+          echo "❌ Release script missing YAML header"
+          exit 1
+        fi
+
+        echo "✅ Release script test passed"
+
+    - name: Test JSON utilities
+      run: |
+        echo "Testing JSON utilities..."
+
+        # Create test file
+        cat > test-package.json << 'EOF'
+        {
+          "name": "test-package",
+          "version": "1.0.0",
+          "scripts": {
+            "start": "bun run index.ts",
+            "build": "bun build index.ts"
+          },
+          "engines": {
+            "bun": "^1.2.0"
+          },
+          "packageManager": "bun@1.2.17",
+          "workspaces": ["packages/*"],
+          "dependencies": {
+            "hono": "^3.0.0"
+          }
+        }
+        EOF
+
+        # Source the JSON utilities
+        source lib/json.sh
+
+        # Test reading values
+        name=$(read_json "test-package.json" ".name")
+        if [ "$name" != "test-package" ]; then
+          echo "❌ Failed to read package name"
+          exit 1
+        fi
+
+        # Test script detection
+        has_build=$(has_script "test-package.json" "build")
+        if [ "$has_build" != "true" ]; then
+          echo "❌ Failed to detect build script"
+          exit 1
+        fi
+
+        has_deploy=$(has_script "test-package.json" "deploy")
+        if [ "$has_deploy" != "false" ]; then
+          echo "❌ Incorrectly detected non-existent script"
+          exit 1
+        fi
+
+        # Test version extraction
+        bun_version=$(get_bun_version_from_engines "test-package.json")
+        if [ "$bun_version" != "^1.2.0" ]; then
+          echo "❌ Failed to extract Bun version"
+          exit 1
+        fi
+
+        package_manager=$(get_package_manager "test-package.json")
+        if [ "$package_manager" != "bun@1.2.17" ]; then
+          echo "❌ Failed to extract packageManager"
+          exit 1
+        fi
+
+        # Test workspace detection
+        has_workspaces=$(has_workspaces "test-package.json")
+        if [ "$has_workspaces" != "true" ]; then
+          echo "❌ Failed to detect workspaces"
+          exit 1
+        fi
+
+        # Test dependencies detection
+        has_deps=$(has_dependencies "test-package.json")
+        if [ "$has_deps" != "true" ]; then
+          echo "❌ Failed to detect dependencies"
+          exit 1
+        fi
+
+        echo "✅ JSON utilities tests passed"
+
+    - name: Test utility functions
+      run: |
+        echo "Testing utility functions..."
+
+        source lib/utils.sh
+
+        # Test architecture detection
+        arch=$(get_cpu_architecture)
+        if [ -z "$arch" ]; then
+          echo "❌ Failed to detect CPU architecture"
+          exit 1
+        fi
+        echo "Detected architecture: $arch"
+
+        # Test OS detection
+        os=$(get_os_type)
+        if [ -z "$os" ]; then
+          echo "❌ Failed to detect OS type"
+          exit 1
+        fi
+        echo "Detected OS: $os"
+
+        # Test version normalization
+        version1=$(normalize_version "v1.2.17")
+        if [ "$version1" != "1.2.17" ]; then
+          echo "❌ Failed to normalize version with v prefix"
+          exit 1
+        fi
+
+        version2=$(normalize_version "1.2.17")
+        if [ "$version2" != "1.2.17" ]; then
+          echo "❌ Failed to normalize version without prefix"
+          exit 1
+        fi
+
+        # Test version validation
+        valid1=$(is_valid_version "1.2.17")
+        if [ "$valid1" != "true" ]; then
+          echo "❌ Failed to validate correct version"
+          exit 1
+        fi
+
+        valid2=$(is_valid_version "not-a-version")
+        if [ "$valid2" != "false" ]; then
+          echo "❌ Failed to reject invalid version"
+          exit 1
+        fi
+
+        # Test URL generation
+        url=$(generate_bun_download_url "1.2.17")
+        if [[ ! "$url" =~ ^https://github\.com/oven-sh/bun/releases/download/bun-v1\.2\.17/bun- ]]; then
+          echo "❌ Generated invalid download URL"
+          exit 1
+        fi
+        echo "Generated URL: $url"
+
+        echo "✅ Utility functions tests passed"
+
+    - name: Test test fixtures
+      run: |
+        echo "Testing test fixtures..."
+
+        # Test basic app fixture
+        if [ ! -d "test/fixtures/basic-app" ]; then
+          echo "❌ Basic app fixture not found"
+          exit 1
+        fi
+
+        if [ ! -f "test/fixtures/basic-app/package.json" ]; then
+          echo "❌ Basic app fixture missing package.json"
+          exit 1
+        fi
+
+        if [ ! -f "test/fixtures/basic-app/index.ts" ]; then
+          echo "❌ Basic app fixture missing index.ts"
+          exit 1
+        fi
+
+        if [ ! -f "test/fixtures/basic-app/bun.lock" ]; then
+          echo "❌ Basic app fixture missing bun.lock"
+          exit 1
+        fi
+
+        # Test that fixture is detected
+        result=$(./bin/detect test/fixtures/basic-app)
+        if [ "$result" != "Bun" ]; then
+          echo "❌ Basic app fixture not detected as Bun project"
+          exit 1
+        fi
+
+        # Test JSON validity
+        source lib/json.sh
+        valid=$(is_valid_json "test/fixtures/basic-app/package.json")
+        if [ "$valid" != "true" ]; then
+          echo "❌ Basic app fixture has invalid package.json"
+          exit 1
+        fi
+
+        echo "✅ Test fixtures passed"
+
+    - name: Run full test suite
+      run: |
+        echo "Running full test suite..."
+        ./test/test-buildpack.sh
+
+    - name: Test app generator
+      run: |
+        echo "Testing app generator..."
+
+        # Test basic template
+        cd /tmp
+        bash -x "$(pwd)/heroku-buildpack-bun/scripts/create-bun-app.sh" test-basic-app basic
+
+        if [ ! -d "test-basic-app" ]; then
+          echo "❌ App generator failed to create directory"
+          exit 1
+        fi
+
+        if [ ! -f "test-basic-app/package.json" ]; then
+          echo "❌ App generator missing package.json"
+          exit 1
+        fi
+
+        if [ ! -f "test-basic-app/index.ts" ]; then
+          echo "❌ App generator missing index.ts"
+          exit 1
+        fi
+
+        if [ ! -f "test-basic-app/.bun-version" ]; then
+          echo "❌ App generator missing .bun-version"
+          exit 1
+        fi
+
+        # Test that generated app is detected
+        result=$($(pwd)/heroku-buildpack-bun/bin/detect test-basic-app)
+        if [ "$result" != "Bun" ]; then
+          echo "❌ Generated app not detected as Bun project"
+          exit 1
+        fi
+
+        echo "✅ App generator test passed"
+
+    - name: Validate documentation
+      run: |
+        echo "Validating documentation..."
+
+        # Check for required documentation files
+        test -f README.md
+        test -f DEPLOYMENT.md
+        test -f BUILDPACK_SUMMARY.md
+        test -f CHANGELOG.md
+        test -f MIGRATION.md
+        test -f CONTRIBUTING.md
+        test -f LICENSE
+
+        # Check for GitHub templates
+        test -f .github/ISSUE_TEMPLATE/bug_report.md
+        test -f .github/ISSUE_TEMPLATE/feature_request.md
+        test -f .github/pull_request_template.md
+
+        # Validate that URLs in documentation point to correct repository
+        if grep -r "your-username" README.md DEPLOYMENT.md >/dev/null 2>&1; then
+          echo "❌ Found placeholder URLs in documentation"
+          exit 1
+        fi
+
+        echo "✅ Documentation validation passed"
+
+    - name: Cleanup
+      if: always()
+      run: |
+        rm -rf test-detect test-package.json /tmp/test-basic-app
+        echo "✅ Cleanup completed"
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Security scan
+      run: |
+        echo "Running security checks..."
+
+        # Check for hardcoded secrets or API keys
+        if grep -r -i "api.key\|secret\|password\|token" bin/ lib/ scripts/ --exclude-dir=.git >/dev/null 2>&1; then
+          echo "⚠️ Potential secrets found in code"
+        fi
+
+        # Check for proper shell safety
+        if grep -r "eval\|exec" bin/ lib/ scripts/ --exclude-dir=.git >/dev/null 2>&1; then
+          echo "⚠️ Found potentially unsafe shell commands"
+        fi
+
+        # Check for proper error handling
+        if ! grep -r "set -e" bin/ >/dev/null 2>&1; then
+          echo "⚠️ Some scripts missing error handling"
+        fi
+
+        echo "✅ Security scan completed"
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install shellcheck
+      run: sudo apt-get install -y shellcheck
+
+    - name: Lint shell scripts
+      run: |
+        echo "Linting shell scripts..."
+
+        # Find all shell scripts and run shellcheck
+        find bin lib scripts test -name "*.sh" -type f | while read -r file; do
+          echo "Checking $file..."
+          shellcheck "$file" || echo "⚠️ Shellcheck warnings in $file"
+        done
+
+        # Check main executable scripts
+        for script in bin/detect bin/compile bin/release; do
+          echo "Checking $script..."
+          shellcheck "$script" || echo "⚠️ Shellcheck warnings in $script"
+        done
+
+        echo "✅ Linting completed"

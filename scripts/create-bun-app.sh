@@ -489,7 +489,7 @@ A Bun application built with the $TEMPLATE template.
 
 2. Set the Bun buildpack:
    \`\`\`bash
-   heroku buildpacks:set https://github.com/your-username/heroku-buildpack-bun
+   heroku buildpacks:set https://github.com/fuwiyo/heroku-buildpack-bun
    \`\`\`
 
 3. Deploy:
@@ -589,7 +589,7 @@ echo "  3. bun run dev"
 echo
 log_info "To deploy to Heroku:"
 echo "  1. heroku create $APP_NAME"
-echo "  2. heroku buildpacks:set https://github.com/your-username/heroku-buildpack-bun"
+echo "  2. heroku buildpacks:set https://github.com/fuwiyo/heroku-buildpack-bun"
 echo "  3. git push heroku main"
 echo
 log_success "Happy coding! 🎉"

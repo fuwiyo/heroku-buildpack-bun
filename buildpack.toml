@@ -3,11 +3,11 @@ id = "heroku-community/bun"
 version = "1.0.1"
 name = "Bun"
 description = "A comprehensive, no-BS Heroku buildpack for Bun - the fast all-in-one JavaScript runtime & toolkit"
-homepage = "https://github.com/your-username/heroku-buildpack-bun"
+homepage = "https://github.com/fuwiyo/heroku-buildpack-bun"
 
 [[buildpack.licenses]]
 type = "MIT"
-uri = "https://github.com/your-username/heroku-buildpack-bun/blob/main/LICENSE"
+uri = "https://github.com/fuwiyo/heroku-buildpack-bun/blob/main/LICENSE"
 
 [metadata]
 include_files = [

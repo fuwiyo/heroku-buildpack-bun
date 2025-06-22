@@ -59,7 +59,7 @@ heroku git:remote -a your-existing-app
 
 ```bash
 # Option 1: Use this buildpack from GitHub (recommended)
-heroku buildpacks:set https://github.com/your-username/heroku-buildpack-bun
+heroku buildpacks:set https://github.com/fuwiyo/heroku-buildpack-bun
 
 # Option 2: Use local buildpack for testing
 heroku buildpacks:set file:///path/to/this/buildpack
@@ -447,7 +447,7 @@ console.log(JSON.stringify({
 
 ## Support
 
-- [Buildpack Issues](https://github.com/your-username/heroku-buildpack-bun/issues)
+- [Buildpack Issues](https://github.com/fuwiyo/heroku-buildpack-bun/issues)
 - [Bun Documentation](https://bun.sh/docs)
 - [Heroku Documentation](https://devcenter.heroku.com/)
 - [Heroku Support](https://help.heroku.com/)
